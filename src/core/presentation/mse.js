@@ -126,7 +126,7 @@ export class Buffer {
             return;
         }
         let range = this.cleanRanges.shift();
-        Log.debug(`${this.codec} remove range [${range[0]} - ${range[1]}). 
+        Log.debug(`${this.codec} remove range [${range[0]} - ${range[1]}).
                     \nUpdating: ${this.sourceBuffer.updating}
                     `);
         this.cleaning = true;
@@ -253,6 +253,16 @@ export class MSE {
 
     constructor (players) {
         this.players = players;
+        const playing = this.players.map((video, idx) => {
+            video.onplaying = function() {
+                playing[idx] = true;
+            };
+            video.onpause = function() {
+                playing[idx] = false;
+            };
+            return !video.paused;
+        });
+        this.playing = playing;
         this.eventSource = new EventEmitter();
         this.mediaSource = new MediaSource();
         this.reset();
@@ -264,7 +274,11 @@ export class MSE {
     }
 
     play() {
-        this.players.forEach((video)=>{video.play();});
+        this.players.forEach((video, idx)=>{
+            if (video.paused && !this.playing[idx]) {
+                video.play();
+            }
+        });
     }
 
     setLive(is_live) {
@@ -276,8 +290,10 @@ export class MSE {
 
     resetBuffers() {
         this.players.forEach((video)=>{
-            video.pause();
-            video.currentTime=0;
+            if (!video.paused && this.playing[idx]) {
+                video.pause();
+            }
+            video.currentTime = 0;
         });
 
         let promises = [];
@@ -297,7 +313,7 @@ export class MSE {
             this.buffers[track].destroy();
             delete this.buffers[track];
         }
-        if (this.mediaSource.readyState == 'open') {
+        if (this.mediaSource.readyState === 'open') {
             this.mediaSource.duration = 0;
             this.mediaSource.endOfStream();
         }

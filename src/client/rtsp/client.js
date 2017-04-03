@@ -1,6 +1,7 @@
 import {StateMachine} from 'bp_statemachine';
 import {SDPParser} from '../../core/parsers/sdp';
-import {RTSPStream} from './stream';
+import {NALU} from '../../core/elementary/NALU';
+// import {RTSPStream} from './stream_joy4';
 // import {RTP} from './rtp/rtp';
 import RTPFactory from './rtp/factory';
 import {MessageBuilder} from './message';
@@ -20,17 +21,20 @@ export class RTPError {
     }
 }
 
-export default class RTSPClient extends BaseClient {
+export class RTSPClient extends BaseClient {
     constructor(transport, options={flush: 200}) {
         super(transport, options);
         this.clientSM = new RTSPClientSM(this, transport);
-        this.clientSM.ontracks = (tracks) => {
+        this.clientSM.ontracks = (tracks)=> {
             this.eventSource.dispatchEvent('tracks', tracks);
             this.startStreamFlush();
         };
-        this.sampleQueues={};
+        this.clientSM.untracks = ()=> {
+            this.stopStreamFlush();
+        };
+        this.sampleQueues = {};
     }
-    
+
     static streamType() {
         return 'rtsp';
     }
@@ -46,10 +50,15 @@ export default class RTSPClient extends BaseClient {
     }
 
     start() {
+        // if (!this.url) return;
         super.start();
         this.transport.ready.then(()=> {
             this.clientSM.start();
         });
+    }
+
+    onControl(ctrl) {
+        this.clientSM.onControl(ctrl);
     }
 
     onData(data) {
@@ -68,14 +77,10 @@ export default class RTSPClient extends BaseClient {
 }
 
 export class RTSPClientSM extends StateMachine {
-    static get USER_AGENT() {return 'SFRtsp 0.3';}
     static get STATE_INITIAL() {return  1 << 0;}
-    static get STATE_OPTIONS() {return 1 << 1;}
-    static get STATE_DESCRIBE () {return  1 << 2;}
-    static get STATE_SETUP() {return  1 << 3;}
-    static get STATE_STREAMS() {return 1 << 4;}
-    static get STATE_TEARDOWN() {return  1 << 5;}
-    // static STATE_PAUSED = 1 << 6;
+    static get STATE_START() {return  1 << 1;}
+    static get STATE_OPEN() {return  1 << 2;}
+    static get STATE_TEARDOWN() {return  1 << 3;}
 
     constructor(parent, transport) {
         super();
@@ -85,21 +90,17 @@ export class RTSPClientSM extends StateMachine {
         this.payParser = new RTPPayloadParser();
         this.rtp_channels = new Set();
         this.ontracks = null;
+        this.untracks = null;
 
         this.reset();
 
-        this.addState(RTSPClientSM.STATE_INITIAL,{
-        }).addState(RTSPClientSM.STATE_OPTIONS, {
-            activate: this.sendOptions,
-            finishTransition: this.onOptions
-        }).addState(RTSPClientSM.STATE_DESCRIBE, {
-            activate: this.sendDescribe,
-            finishTransition: this.onDescribe
-        }).addState(RTSPClientSM.STATE_SETUP, {
-            activate: this.sendSetup,
-            finishTransition: this.onSetup
-        }).addState(RTSPClientSM.STATE_STREAMS, {
-
+        this.addState(RTSPClientSM.STATE_INITIAL, {
+        }).addState(RTSPClientSM.STATE_START, {
+            activate: this.sendStart,
+            finishTransition: ()=> {
+                return this.transitionTo(RTSPClientSM.STATE_OPEN)
+            },
+        }).addState(RTSPClientSM.STATE_OPEN, {
         }).addState(RTSPClientSM.STATE_TEARDOWN, {
             activate: ()=>{
                 this.started = false;
@@ -107,19 +108,13 @@ export class RTSPClientSM extends StateMachine {
             finishTransition: ()=>{
                 return this.transitionTo(RTSPClientSM.STATE_INITIAL)
             }
-        }).addTransition(RTSPClientSM.STATE_INITIAL, RTSPClientSM.STATE_OPTIONS)
+        }).addTransition(RTSPClientSM.STATE_INITIAL, RTSPClientSM.STATE_START)
+            .addTransition(RTSPClientSM.STATE_START, RTSPClientSM.STATE_OPEN)
+            .addTransition(RTSPClientSM.STATE_OPEN, RTSPClientSM.STATE_START)
+            .addTransition(RTSPClientSM.STATE_OPEN, RTSPClientSM.STATE_TEARDOWN)
+            .addTransition(RTSPClientSM.STATE_START, RTSPClientSM.STATE_TEARDOWN)
             .addTransition(RTSPClientSM.STATE_INITIAL, RTSPClientSM.STATE_TEARDOWN)
-            .addTransition(RTSPClientSM.STATE_OPTIONS, RTSPClientSM.STATE_DESCRIBE)
-            .addTransition(RTSPClientSM.STATE_DESCRIBE, RTSPClientSM.STATE_SETUP)
-            .addTransition(RTSPClientSM.STATE_SETUP, RTSPClientSM.STATE_STREAMS)
-            .addTransition(RTSPClientSM.STATE_TEARDOWN, RTSPClientSM.STATE_INITIAL)
-            // .addTransition(RTSPClientSM.STATE_STREAMS, RTSPClientSM.STATE_PAUSED)
-            // .addTransition(RTSPClientSM.STATE_PAUSED, RTSPClientSM.STATE_STREAMS)
-            .addTransition(RTSPClientSM.STATE_STREAMS, RTSPClientSM.STATE_TEARDOWN)
-            // .addTransition(RTSPClientSM.STATE_PAUSED, RTSPClientSM.STATE_TEARDOWN)
-            .addTransition(RTSPClientSM.STATE_SETUP, RTSPClientSM.STATE_TEARDOWN)
-            .addTransition(RTSPClientSM.STATE_DESCRIBE, RTSPClientSM.STATE_TEARDOWN)
-            .addTransition(RTSPClientSM.STATE_OPTIONS, RTSPClientSM.STATE_TEARDOWN);
+            .addTransition(RTSPClientSM.STATE_TEARDOWN, RTSPClientSM.STATE_INITIAL);
 
         this.transitionTo(RTSPClientSM.STATE_INITIAL);
 
@@ -149,78 +144,76 @@ export class RTSPClientSM extends StateMachine {
         this.parent = null;
     }
 
-    setSource(url) {
-        this.endpoint = url;
-        this.url = url.urlpath;
-    }
-
     onConnected() {
-        if (this.rtpFactory) {
-            this.rtpFactory = null;
-        }
+        this.rtpFactory = null;
         if (this.shouldReconnect) {
-            this.start();
+            this.reconnect();
         }
     }
-
     onDisconnected() {
         this.reset();
         this.shouldReconnect = true;
         return this.transitionTo(RTSPClientSM.STATE_TEARDOWN);
     }
 
+    setSource(url) {
+        this.url = url;
+        this.reconnect();
+    }
     start() {
-        if (this.state != RTSPClientSM.STATE_STREAMS) {
-            this.transitionTo(RTSPClientSM.STATE_OPTIONS);
-        } else {
-            // TODO: seekable
-        }
+        // this.reconnect();
     }
-
-    onData(data) {
-        let channel = data[1];
-        if (this.rtp_channels.has(channel)) {
-            this.onRTP({packet: data.subarray(4), type: channel});
-        }
-    }
-
-    useRTPChannel(channel) {
-        this.rtp_channels.add(channel);
-    }
-
-    forgetRTPChannel(channel) {
-        this.rtp_channels.delete(channel);
-    }
-
     stop() {
         this.shouldReconnect = false;
         // this.mse = null;
     }
 
-    reset() {
-        this.methods = [];
-        this.tracks = [];
-        for (let stream in this.streams) {
-            this.streams[stream].reset();
+    sendStart() {
+        this.send(this.url);
+        return Promise.resolve();
+    }
+
+
+    onControl(resp) {
+        switch (resp.id) {
+        case 'rtsp':
+            this.handleCtrl(resp.result);
+            break;
+        case 'stopped':
+        case 'error':
+            this.transitionTo(RTSPClientSM.STATE_TEARDOWN);
+            break;
         }
-        this.streams={};
-        this.contentBase = "";
-        this.state = RTSPClientSM.STATE_INITIAL;
+    }
+
+    onData(data) {
+        if (!this.ready) return;
+        let channel = data[1];
+        this.onRTP({packet: data.subarray(4), type: channel});
+    }
+
+    reset() {
+        this.ready = false;
+        if (this.untracks) {
+            this.untracks();
+        }
+        this.parent.eventSource.dispatchEvent('clear');
+        this.methods = [];
+        this.track = null;
         this.sdp = null;
-        this.interleaveChannelIndex = 0;
         this.session = null;
         this.timeOffset = {};
     }
 
     reconnect() {
-        //this.parent.eventSource.dispatchEvent('clear');
-        this.reset();
-        if (this.currentState.name != RTSPClientSM.STATE_INITIAL) {
+        this.state = RTSPClientSM.STATE_INITIAL;
+        // this.reset();
+        if (this.currentState && this.currentState.name != RTSPClientSM.STATE_INITIAL) {
             this.transitionTo(RTSPClientSM.STATE_TEARDOWN).then(()=> {
-                this.transitionTo(RTSPClientSM.STATE_OPTIONS);
+                this.transitionTo(RTSPClientSM.STATE_START);
             });
         } else {
-            this.transitionTo(RTSPClientSM.STATE_OPTIONS);
+            this.transitionTo(RTSPClientSM.STATE_START);
         }
     }
 
@@ -228,13 +221,13 @@ export class RTSPClientSM extends StateMachine {
         return this.methods.includes(method)
     }
 
-    parse(_data) {
-        Log.debug(_data.payload);
-        let d=_data.payload.split('\r\n\r\n');
+    parse(payload) {
+        Log.debug(payload);
+        let d = payload.split('\r\n\r\n');
         let parsed =  MessageBuilder.parse(d[0]);
         let len = Number(parsed.headers['content-length']);
         if (len) {
-            let d=_data.payload.split('\r\n\r\n');
+            // let d = payload.split('\r\n\r\n');
             parsed.body = d[1];
         } else {
             parsed.body="";
@@ -242,76 +235,43 @@ export class RTSPClientSM extends StateMachine {
         return parsed
     }
 
-    sendRequest(_cmd, _host, _params={}, _payload=null) {
-        this.cSeq++;
-        Object.assign(_params, {
-            CSeq: this.cSeq,
-            'User-Agent': RTSPClientSM.USER_AGENT
-        });
-        if (_host != '*' && this.parent.endpoint.auth) {
-            // TODO: DIGEST authentication
-            _params['Authorization'] = `Basic ${btoa(this.parent.endpoint.auth)}`;
-        }
-        return this.send(MessageBuilder.build(_cmd, _host, _params, _payload));
-    }
-
     send(_data) {
-        return this.transport.ready.then(()=> {
+        this.transport.ready.then(()=> {
             Log.debug(_data);
-            return this.transport.send(_data).then(this.parse.bind(this)).then((parsed)=> {
-                // TODO: parse status codes
-                if (parsed.code>=300) {
-                    Log.error(parsed.statusLine);
-                    throw new Error(`RTSP error: ${parsed.code} ${parsed.message}`);
-                }
-                return parsed;
-            });
-        }).catch(this.onDisconnected.bind(this));
-    }
-
-    sendOptions() {
-        this.reset();
-        this.started = true;
-        this.cSeq = 0;
-        return this.sendRequest('OPTIONS', '*', {});
-    }
-
-    onOptions(data) {
-        this.methods = data.headers['public'].split(',').map((e)=>e.trim());
-        this.transitionTo(RTSPClientSM.STATE_DESCRIBE);
-    }
-
-    sendDescribe() {
-        return this.sendRequest('DESCRIBE', this.url, {
-            'Accept': 'application/sdp'
-        }).then((data)=>{
-            this.sdp = new SDPParser();
-            return this.sdp.parse(data.body).catch(()=>{
-                throw new Error("Failed to parse SDP");
-            }).then(()=>{return data;});
+            this.transport.send(_data);
         });
     }
 
-    onDescribe(data) {
-        this.contentBase = data.headers['content-base'] || `${this.endpoint.protocol}://${this.endpoint.location}${this.url}/`;
-        this.tracks = this.sdp.getMediaBlockList();
-        this.rtpFactory = new RTPFactory(this.sdp);
+    // handleOptions(data) {
+    //     this.reset();
+    //     this.started = true;
+    //     this.cSeq = 0;
+    //     this.methods = data.headers['public'].split(',').map((e)=>e.trim());
+    // }
 
-        Log.log('SDP contained ' + this.tracks.length + ' track(s). Calling SETUP for each.');
-
-        if (data.headers['session']) {
-            this.session = data.headers['session'];
-        }
-
-        if (!this.tracks.length) {
-            throw new Error("No tracks in SDP");
-        }
-
-        this.transitionTo(RTSPClientSM.STATE_SETUP);
+    handleCtrl(resps) {
+        this.reset();
+        // DESCRIBE
+        this.handleDescribe(this.parse(resps.DESCRIBE));
+        // SETUP
+        // this.handleSetup(this.parse(resps.SETUP));
+        // PLAY
+        this.handlePlay(this.parse(resps.PLAY));
     }
-
-    sendSetup() {
-        let streams=[];
+    handleDescribe(data) {
+        this.sdp = new SDPParser();
+        if (!this.sdp.parse(data.body)) {
+            throw new Error("Failed to parse SDP");
+        }
+        this.tracks = this.sdp.getMediaBlockList();
+        if (!this.tracks.length) {
+            throw new Error("No video track in SDP");
+        }
+        this.rtpFactory = new RTPFactory(this.sdp);
+    }
+    handlePlay(data) {
+        // let streams=[];
+        let tracks = [];
 
         // TODO: select first video and first audio tracks
         for (let track_type of this.tracks) {
@@ -321,67 +281,58 @@ export class RTSPClientSM extends StateMachine {
             let track = this.sdp.getMediaBlock(track_type);
             if (!PayloadType.string_map[track.rtpmap[track.fmt[0]].name]) continue;
 
-            this.streams[track_type] = new RTSPStream(this, track);
-            let playPromise = this.streams[track_type].start();
+            // this.streams[track_type] = new RTSPStream(this, track);
+            // let playPromise = this.streams[track_type].start();
             this.parent.sampleQueues[PayloadType.string_map[track.rtpmap[track.fmt[0]].name]]=[];
-            streams.push(playPromise.then(({track, data})=>{
-                let timeOffset = 0;
-                try {
-                    let rtp_info = data.headers["rtp-info"].split(';');
-                    this.timeOffset[track.fmt[0]] = Number(rtp_info[rtp_info.length - 1].split("=")[1]) ;
-                } catch (e) {
-                    this.timeOffset[track.fmt[0]] = new Date().getTime();
-                }
-
-                let params = {
-                    timescale: 0,
-                    scaleFactor: 0
-                };
-                if (track.fmtp['sprop-parameter-sets']) {
-                    let sps_pps = track.fmtp['sprop-parameter-sets'].split(',');
-                    params = {
-                        sps:base64ToArrayBuffer(sps_pps[0]),
-                        pps:base64ToArrayBuffer(sps_pps[1])
-                    };
-                } else if (track.fmtp['config']) {
-                    let config = track.fmtp['config'];
-                    this.has_config = track.fmtp['cpresent']!='0';
-                    let generic = track.rtpmap[track.fmt[0]].name == 'MPEG4-GENERIC';
-                    if (generic) {
-                        params={config:
-                            AACParser.parseAudioSpecificConfig(hexToByteArray(config))
-                        };
-                        this.payParser.aacparser.setConfig(params.config);
-                    } else if (config) {
-                        // todo: parse audio specific config for mpeg4-generic
-                        params={config:
-                            AACParser.parseStreamMuxConfig(hexToByteArray(config))
-                        };
-                        this.payParser.aacparser.setConfig(params.config);
-                    }
-                }
-                params.duration = this.sdp.sessionBlock.range?this.sdp.sessionBlock.range[1]-this.sdp.sessionBlock.range[0]:1;
-                this.parent.seekable = (params.duration > 1);
-                let res = {
-                    track: track,
-                    offset: timeOffset,
-                    type: PayloadType.string_map[track.rtpmap[track.fmt[0]].name],
-                    params: params,
-                    duration: params.duration
-                };
-                return res;
-            }));
-        }
-        return Promise.all(streams).then((tracks)=>{
-
-            if (this.ontracks) {
-                this.ontracks(tracks);
+            let timeOffset = 0;
+            try {
+                let rtp_info = data.headers["rtp-info"].split(';');
+                this.timeOffset[track.fmt[0]] = Number(rtp_info[rtp_info.length - 1].split("=")[1]) ;
+            } catch (e) {
+                this.timeOffset[track.fmt[0]] = new Date().getTime();
             }
-        });
-    }
 
-    onSetup() {
-        this.transitionTo(RTSPClientSM.STATE_STREAMS);
+            let params = {
+                timescale: 0,
+                scaleFactor: 0
+            };
+            if (track.fmtp['sprop-parameter-sets']) {
+                let sps_pps = track.fmtp['sprop-parameter-sets'].split(',');
+                params = {
+                    sps:base64ToArrayBuffer(sps_pps[0]),
+                    pps:base64ToArrayBuffer(sps_pps[1])
+                };
+            } else if (track.fmtp['config']) {
+                let config = track.fmtp['config'];
+                this.has_config = track.fmtp['cpresent']!='0';
+                let generic = track.rtpmap[track.fmt[0]].name == 'MPEG4-GENERIC';
+                if (generic) {
+                    params={config:
+                        AACParser.parseAudioSpecificConfig(hexToByteArray(config))
+                    };
+                    this.payParser.aacparser.setConfig(params.config);
+                } else if (config) {
+                    // todo: parse audio specific config for mpeg4-generic
+                    params={config:
+                        AACParser.parseStreamMuxConfig(hexToByteArray(config))
+                    };
+                    this.payParser.aacparser.setConfig(params.config);
+                }
+            }
+            params.duration = this.sdp.sessionBlock.range?this.sdp.sessionBlock.range[1]-this.sdp.sessionBlock.range[0]:1;
+            this.parent.seekable = (params.duration > 1);
+            tracks.push({
+                track: track,
+                offset: timeOffset,
+                type: PayloadType.string_map[track.rtpmap[track.fmt[0]].name],
+                params: params,
+                duration: params.duration
+            });
+        }
+        this.ready = true;
+        if (this.ontracks) {
+            this.ontracks(tracks);
+        }
     }
 
     onRTP(_data) {
@@ -393,6 +344,11 @@ export class RTSPClientSM extends StateMachine {
         if (rtp.media) {
             let pay = this.payParser.parse(rtp);
             if (pay) {
+                // if (pay.nftype !== 5) {
+                //     console.log('+++++++++++++++not idr frame, skipping');
+                //     return;
+                // }
+                // console.log('+++++++++++++++adding idr frame');
                 this.parent.sampleQueues[rtp.type].push([pay]);
             }
         }

@@ -5,9 +5,10 @@ import alias from 'rollup-plugin-alias';
 const path = require('path');
 
 export default {
-    entry: path.join(__dirname, 'example.js'),
+    entry: path.join(__dirname, 'html5_rtsp_player.js'),
+    moduleName: 'RTSP',
     targets: [
-        {dest: path.join(__dirname, 'example/streamedian.js'), format: 'es'}
+        {dest: path.join(__dirname, 'dist/html5_rtsp_player.js'), format: 'iife'}
     ],
     sourceMap: true,
     plugins: [
@@ -20,7 +21,7 @@ export default {
             bp_statemachine: path.join(__dirname,'node_modules/bp_statemachine/statemachine.js'),
             jsencrypt: path.join(__dirname,'node_modules/jsencrypt/src/jsencrypt.js'),
             rtsp: path.join(__dirname,'node_modules/html5_rtsp_player/src'),
-            // streamedian: path.join(__dirname,'src')
+            // src: path.join(__dirname,'src')
         })
     ]
 

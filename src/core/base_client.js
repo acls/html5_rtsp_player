@@ -7,12 +7,18 @@ export class BaseClient {
         this.eventSource = new EventEmitter();
 
         Object.defineProperties(this, {
-            sourceUrl: {value: null, writable: true},   // TODO: getter with validator
+            url: {value: null, writable: true},
             paused: {value: true, writable: true},
             seekable: {value: false, writable: true},
             connected: {value: false, writable: true}
         });
 
+        this._onControl = ()=> {
+            this.connected = true;
+            while (this.transport.ctrlQueue.length) {
+                this.onControl(this.transport.ctrlQueue.pop());
+            }
+        };
         this._onData = ()=>{
             if (this.connected) {
                 while (this.transport.dataQueue.length) {
@@ -26,9 +32,9 @@ export class BaseClient {
     }
 
     static streamType() {
-        return null;    
+        return null;
     }
-    
+
     destroy() {
         this.detachTransport();
     }
@@ -36,6 +42,7 @@ export class BaseClient {
     attachTransport(transport) {
         this.detachTransport();
         this.transport = transport;
+        this.transport.eventSource.addEventListener('control', this._onControl);
         this.transport.eventSource.addEventListener('data', this._onData);
         this.transport.eventSource.addEventListener('connected', this._onConnect);
         this.transport.eventSource.addEventListener('disconnected', this._onDisconnect);
@@ -43,6 +50,7 @@ export class BaseClient {
 
     detachTransport() {
         if (this.transport) {
+            this.transport.eventSource.removeEventListener('control', this._onControl);
             this.transport.eventSource.removeEventListener('data', this._onData);
             this.transport.eventSource.removeEventListener('connected', this._onConnect);
             this.transport.eventSource.removeEventListener('disconnected', this._onDisconnect);
@@ -65,10 +73,9 @@ export class BaseClient {
 
     }
 
-    setSource(source) {
-        this.stop();
-        this.endpoint = source;
-        this.sourceUrl = source.urlpath;
+    setSource(url) {
+        // this.stop();
+        this.url = url;
     }
 
     startStreamFlush() {
@@ -81,6 +88,10 @@ export class BaseClient {
 
     stopStreamFlush() {
         clearInterval(this.flushInterval);
+    }
+
+    onControl(ctrl) {
+
     }
 
     onData(data) {

@@ -16,17 +16,12 @@ export class BaseRequest {
 }
 
 export class BaseTransport {
-    constructor(endpoint, stream_type, config={}) {
-        this.stream_type = stream_type;
-        this.endpoint = endpoint;
+    constructor() {
         this.eventSource = new EventEmitter();
+        this.ctrlQueue = [];
         this.dataQueue = [];
     }
 
-    static canTransfer(stream_type) {
-        return BaseTransport.streamTypes().includes(stream_type);
-    }
-    
     static streamTypes() {
         return [];
     }

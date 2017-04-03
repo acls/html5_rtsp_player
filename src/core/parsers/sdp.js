@@ -17,7 +17,7 @@ export class SDPParser {
 
     parse(content) {
         Log.debug(content);
-        return new Promise((resolve, reject)=>{
+        // return new Promise((resolve, reject)=>{
             var dataString = content;
             var success = true;
             var currentMediaBlock = this.sessionBlock;
@@ -35,7 +35,7 @@ export class SDPParser {
                     case 'v':
                         if (-1 !== this.version) {
                             Log.log('Version present multiple times in SDP');
-                            reject();
+                            // reject();
                             return false;
                         }
                         success = success && this._parseVersion(line);
@@ -44,7 +44,7 @@ export class SDPParser {
                     case 'o':
                         if (null !== this.origin) {
                             Log.log('Origin present multiple times in SDP');
-                            reject();
+                            // reject();
                             return false;
                         }
                         success = success && this._parseOrigin(line);
@@ -53,7 +53,7 @@ export class SDPParser {
                     case 's':
                         if (null !== this.sessionName) {
                             Log.log('Session Name present multiple times in SDP');
-                            reject();
+                            // reject();
                             return false;
                         }
                         success = success && this._parseSessionName(line);
@@ -62,7 +62,7 @@ export class SDPParser {
                     case 't':
                         if (null !== this.timing) {
                             Log.log('Timing present multiple times in SDP');
-                            reject();
+                            // reject();
                             return false;
                         }
                         success = success && this._parseTiming(line);
@@ -90,15 +90,16 @@ export class SDPParser {
                 }
 
                 if (!success) {
-                    reject();
-                    return;
+                    // reject();
+                    return false;
                 }
             }
 
             this.media[currentMediaBlock.type] = currentMediaBlock;
 
-            success?resolve():reject();
-        });
+        //     success?resolve():reject();
+        // });
+        return success;
     }
 
     _parseVersion(line) {
