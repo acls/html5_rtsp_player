@@ -983,10 +983,6 @@ var RTSP = (function () {
               // Log.debug('update start');
               if (this.cleaning) {
                   Log$3.debug(`${this.codec} cleaning start`);
-              // } else {
-              //     if (this.players[0].duration > 10) {
-              //         this.initCleanup();
-              //     }
               }
           });
 
@@ -2707,7 +2703,7 @@ var RTSP = (function () {
 
       _parseVersion(line) {
           var matches = line.match(/^v=([0-9]+)$/);
-          if (0 === matches.length) {
+          if (!matches || !matches.length) {
               Log$7.log('\'v=\' (Version) formatted incorrectly: ' + line);
               return false;
           }
@@ -2722,8 +2718,8 @@ var RTSP = (function () {
       }
 
       _parseOrigin(line) {
-          var matches = line.match(/^o=([^ ]+) ([0-9]+) ([0-9]+) (IN) (IP4|IP6) ([^ ]+)$/);
-          if (0 === matches.length) {
+          var matches = line.match(/^o=([^0-9]+) ([0-9]+) ([0-9]+) (IN) (IP4|IP6) ([^ ]+)$/);
+          if (!matches || !matches.length) {
               Log$7.log('\'o=\' (Origin) formatted incorrectly: ' + line);
               return false;
           }
@@ -2741,7 +2737,7 @@ var RTSP = (function () {
 
       _parseSessionName(line) {
           var matches = line.match(/^s=([^\r\n]+)$/);
-          if (0 === matches.length) {
+          if (!matches || !matches.length) {
               Log$7.log('\'s=\' (Session Name) formatted incorrectly: ' + line);
               return false;
           }
@@ -2753,7 +2749,7 @@ var RTSP = (function () {
 
       _parseTiming(line) {
           var matches = line.match(/^t=([0-9]+) ([0-9]+)$/);
-          if (0 === matches.length) {
+          if (!matches || !matches.length) {
               Log$7.log('\'t=\' (Timing) formatted incorrectly: ' + line);
               return false;
           }
@@ -2767,7 +2763,7 @@ var RTSP = (function () {
 
       _parseMediaDescription(line, media) {
           var matches = line.match(/^m=([^ ]+) ([^ ]+) ([^ ]+)[ ]/);
-          if (0 === matches.length) {
+          if (!matches || !matches.length) {
               Log$7.log('\'m=\' (Media) formatted incorrectly: ' + line);
               return false;
           }
@@ -2833,7 +2829,7 @@ var RTSP = (function () {
 
               case 'a=fmtp':
                   matches = line.match(/^a=fmtp:(\d+) (.*)$/);
-                  if (0 === matches.length) {
+                  if (!matches || !matches.length) {
                       Log$7.log('Could not parse \'fmtp\'  of \'a=\'');
                       return false;
                   }
@@ -6430,18 +6426,17 @@ var RTSP = (function () {
           //     this.start();
           // }
 
-          let first = true;
-          this.player.addEventListener('durationchange', ()=> {
-              const {duration, currentTime} = this.player;
-              // console.log('duration changed', duration, currentTime);
-              if (currentTime + 1 < duration) {
-                  this.player.currentTime = duration;
-              }
-
-              // if (duration > 20) {
-              //     this.remuxer.mse.initCleanup();
-              // }
-          }, false);
+          // this.player.addEventListener('durationchange', ()=> {
+          //     const {duration, currentTime} = this.player;
+          //     // console.log('duration changed', duration, currentTime);
+          //     if (currentTime + 1 < duration) {
+          //         this.player.currentTime = duration;
+          //     }
+          //
+          //     // if (duration > 20) {
+          //     //     this.remuxer.mse.initCleanup();
+          //     // }
+          // }, false);
 
           this.player.addEventListener('play', ()=> {
               if (!this.isPlaying()) {

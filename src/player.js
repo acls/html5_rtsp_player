@@ -14,18 +14,17 @@ export class Player {
         //     this.start();
         // }
 
-        let first = true;
-        this.player.addEventListener('durationchange', ()=> {
-            const {duration, currentTime} = this.player;
-            // console.log('duration changed', duration, currentTime);
-            if (currentTime + 1 < duration) {
-                this.player.currentTime = duration;
-            }
-
-            // if (duration > 20) {
-            //     this.remuxer.mse.initCleanup();
-            // }
-        }, false);
+        // this.player.addEventListener('durationchange', ()=> {
+        //     const {duration, currentTime} = this.player;
+        //     // console.log('duration changed', duration, currentTime);
+        //     if (currentTime + 1 < duration) {
+        //         this.player.currentTime = duration;
+        //     }
+        //
+        //     // if (duration > 20) {
+        //     //     this.remuxer.mse.initCleanup();
+        //     // }
+        // }, false);
 
         this.player.addEventListener('play', ()=> {
             if (!this.isPlaying()) {

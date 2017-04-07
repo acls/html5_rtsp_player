@@ -16,6 +16,6 @@ setTimeout(function() {
     urls.push(url);
     p.setSource(url);
   }
-  setInterval(nextUrl, 30 * 1000);
+  // setInterval(nextUrl, 30 * 1000);
   nextUrl();
 }, 1000);

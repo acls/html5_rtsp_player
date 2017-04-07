@@ -104,7 +104,7 @@ export class SDPParser {
 
     _parseVersion(line) {
         var matches = line.match(/^v=([0-9]+)$/);
-        if (0 === matches.length) {
+        if (!matches || !matches.length) {
             Log.log('\'v=\' (Version) formatted incorrectly: ' + line);
             return false;
         }
@@ -119,8 +119,8 @@ export class SDPParser {
     }
 
     _parseOrigin(line) {
-        var matches = line.match(/^o=([^ ]+) ([0-9]+) ([0-9]+) (IN) (IP4|IP6) ([^ ]+)$/);
-        if (0 === matches.length) {
+        var matches = line.match(/^o=([^0-9]+) ([0-9]+) ([0-9]+) (IN) (IP4|IP6) ([^ ]+)$/);
+        if (!matches || !matches.length) {
             Log.log('\'o=\' (Origin) formatted incorrectly: ' + line);
             return false;
         }
@@ -138,7 +138,7 @@ export class SDPParser {
 
     _parseSessionName(line) {
         var matches = line.match(/^s=([^\r\n]+)$/);
-        if (0 === matches.length) {
+        if (!matches || !matches.length) {
             Log.log('\'s=\' (Session Name) formatted incorrectly: ' + line);
             return false;
         }
@@ -150,7 +150,7 @@ export class SDPParser {
 
     _parseTiming(line) {
         var matches = line.match(/^t=([0-9]+) ([0-9]+)$/);
-        if (0 === matches.length) {
+        if (!matches || !matches.length) {
             Log.log('\'t=\' (Timing) formatted incorrectly: ' + line);
             return false;
         }
@@ -164,7 +164,7 @@ export class SDPParser {
 
     _parseMediaDescription(line, media) {
         var matches = line.match(/^m=([^ ]+) ([^ ]+) ([^ ]+)[ ]/);
-        if (0 === matches.length) {
+        if (!matches || !matches.length) {
             Log.log('\'m=\' (Media) formatted incorrectly: ' + line);
             return false;
         }
@@ -230,7 +230,7 @@ case 'a=range':
 
             case 'a=fmtp':
                 matches = line.match(/^a=fmtp:(\d+) (.*)$/);
-                if (0 === matches.length) {
+                if (!matches || !matches.length) {
                     Log.log('Could not parse \'fmtp\'  of \'a=\'');
                     return false;
                 }
